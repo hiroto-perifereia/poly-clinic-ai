@@ -2,6 +2,7 @@ import streamlit as st
 from groq import Groq
 from notion_client import Client
 import json
+import datetime
 
 # --- 1. ページ基本設定 ---
 st.set_page_config(page_title="Medical AI Assistant", page_icon="🩺", layout="centered")
