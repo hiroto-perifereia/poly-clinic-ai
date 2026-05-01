@@ -26,13 +26,14 @@ if "saved" not in st.session_state:
 with st.sidebar:
     st.title("🏥 設定")
     
-    # 選択肢のリスト（先頭にプレースホルダーを追加）
-    dept_options = ["--- 診療科を選択 ---", "内科", "循環器内科", "消化器内科", "外科", "消化器外科", "心臓血管外科", "小児科", "産婦人科", "精神科", "その他"]
+    # 選択肢のリスト（ここには純粋な科目名だけを入れる）
+    dept_options = ["循環器内科", "消化器内科", "外科", "消化器外科", "心臓血管外科", "小児科", "産婦人科", "精神科", "その他"]
     
     department = st.selectbox(
         "実習中の診療科",
         options=dept_options,
-        index=0 # 最初は "--- 診療科を選択 ---" が選ばれる
+        index=None,            # 初期状態を「未選択」にする
+        placeholder="診療科を選択..."  # 未選択時に表示する薄い文字
     )
     
     st.divider()
@@ -93,25 +94,24 @@ if st.session_state.res_json:
     with tab2:
         st.success(data['report_draft'])
 
-    # 【重要】診療科が選択されていない場合の判定
-    is_not_selected = (department == "--- 診療科を選択 ---")
-    
-    # 保存ボタンのラベルと無効化設定
-    save_label = f"📥 {department} として保存" if not is_not_selected else "⚠️ 診療科を選択してください"
-    
-    if st.button(save_label, use_container_width=True, disabled=is_not_selected):
-        with st.spinner("Notionに同期中..."):
-            try:
-                notion.pages.create(
-                    parent={"database_id": DATABASE_ID},
-                    properties={
-                        "Name": {"title": [{"text": {"content": str(data['topic'])}}]},
-                        "CBT知識": {"rich_text": [{"text": {"content": str(data['cbt_knowledge'])}}]},
-                        "レポート考察": {"rich_text": [{"text": {"content": str(data['report_draft'])}}]},
-                        "診療科": {"rich_text": [{"text": {"content": department}}]}
-                    }
-                )
-                st.session_state.saved = True
-                st.toast(f"✅ {department} に保存完了！")
-            except Exception as e:
-                st.error(f"Notion保存エラー: {e}")
+    # 保存ボタンの判定
+    if department is None:
+        st.warning("保存するにはサイドバーで診療科を選択してください。")
+        st.button("📥 保存不可 (診療科未選択)", use_container_width=True, disabled=True)
+    else:
+        if st.button(f"📥 {department} として保存", use_container_width=True):
+            with st.spinner("Notionに同期中..."):
+                try:
+                    notion.pages.create(
+                        parent={"database_id": DATABASE_ID},
+                        properties={
+                            "Name": {"title": [{"text": {"content": str(data['topic'])}}]},
+                            "CBT知識": {"rich_text": [{"text": {"content": str(data['cbt_knowledge'])}}]},
+                            "レポート考察": {"rich_text": [{"text": {"content": str(data['report_draft'])}}]},
+                            "診療科": {"rich_text": [{"text": {"content": department}}]}
+                        }
+                    )
+                    st.session_state.saved = True
+                    st.toast(f"✅ {department} に保存完了！")
+                except Exception as e:
+                    st.error(f"Notion保存エラー: {e}")
