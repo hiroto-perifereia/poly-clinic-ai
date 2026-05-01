@@ -1,140 +1,106 @@
 import streamlit as st
-from groq import Groq
+import google.generativeai as genai
 from notion_client import Client
 import json
-import datetime
-today = datetime.date.today().isoformat()
+from PIL import Image
 
 # --- 1. ページ基本設定 ---
-st.set_page_config(page_title="Medical AI Assistant", page_icon="🩺", layout="centered")
+st.set_page_config(page_title="CBT & Med-Log AI", page_icon="🎓", layout="centered")
 
 # --- 2. クライアント初期化 ---
-GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-NOTION_TOKEN = st.secrets["NOTION_TOKEN"]
+# Secretsに GEMINI_API_KEY を追加してください
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-flash') # 高速・高機能なFlashを採用
+notion = Client(auth=st.secrets["NOTION_TOKEN"])
 DATABASE_ID = st.secrets["DATABASE_ID"]
 
-groq_client = Groq(api_key=GROQ_API_KEY)
-notion = Client(auth=NOTION_TOKEN)
-
 # --- 3. セッション状態の初期化 ---
-if "text_key" not in st.session_state:
-    st.session_state.text_key = 0
 if "res_json" not in st.session_state:
     st.session_state.res_json = None
-if "saved" not in st.session_state:
-    st.session_state.saved = False
 
-# --- 4. サイドバー (科目選択) ---
+# --- 4. サイドバー設定 ---
 with st.sidebar:
-    st.title("🏥 設定")
-    dept_options = ["内科", "循環器内科", "消化器内科", "呼吸器内科", "外科", "消化器外科", "心臓血管外科", "小児科", "産婦人科", "精神科", "その他"]
-    department = st.selectbox(
-        "実習中の診療科",
-        options=dept_options,
-        index=None,
-        placeholder="診療科を選択..."
-    )
+    st.title("⚙️ モード設定")
+    mode = st.radio("機能を選択", ["過去問チェッカー", "講義資料・テキスト構造化", "実習メモ"])
     st.divider()
-    output_length = st.radio("ボリューム", options=["簡潔に", "標準的", "詳しく"], index=1, horizontal=True)
     st.caption("Developed by Hiroto Fujii")
 
-# --- 5. メメイン画面 ---
-st.title("🩺 Poly-Clinic Support AI")
-st.caption("実習の記憶を、CBTの知識とレポートへ。")
+# --- 5. メイン画面 ---
+st.title(f"🎓 {mode}")
 
-user_input = st.text_area(
-    "実習中の気づきやメモを入力...", 
-    placeholder="（例）70代男性、主訴は...",
-    height=180,
-    key=f"input_area_{st.session_state.text_key}"
+# ファイルアップロード（画像・PDF）
+uploaded_file = st.file_uploader("資料や問題のスクショをアップロード", type=["png", "jpg", "jpeg", "pdf"])
+
+# 補足テキスト入力
+user_query = st.text_area(
+    "補足・知りたいこと", 
+    placeholder="（例）なぜcが間違いなのか教えて / このスライドの重要ポイントをまとめて",
+    height=100
 )
 
-col1, col2 = st.columns(2)
-with col1:
-    analyze_btn = st.button("✨ 解析を実行", use_container_width=True, type="primary")
-with col2:
-    if st.button("🗑️ メモを削除", use_container_width=True):
-        st.session_state.res_json = None
-        st.session_state.saved = False
-        st.session_state.text_key += 1
-        st.rerun()
+# 解析ボタン
+if st.button("✨ AI解析を実行", use_container_width=True, type="primary"):
+    with st.spinner("Geminiが資料を読み解き中..."):
+        try:
+            # プロンプトの組み立て
+            prompt = f"""
+            あなたは医学教育のエキスパートです。
+            現在のモード: {mode}
+            
+            指示:
+            1. アップロードされた資料（画像/PDF）とユーザーの質問を解析してください。
+            2. 以下のJSON形式で回答を生成してください。
+            {{
+                "topic": "テーマ（疾患名・項目名）",
+                "key_points": "CBT/国試に直結する重要知識（改行を含めた箇条書き）",
+                "analysis": "詳細な解説や考察（論理的な説明）"
+            }}
+            
+            補足質問: {user_query}
+            """
+            
+            # 画像がある場合とない場合で処理を分け
+            content = [prompt]
+            if uploaded_file:
+                if uploaded_file.type == "application/pdf":
+                    # PDF処理（簡易版：最初のページなどを扱う場合は追加実装が必要）
+                    st.warning("PDF解析は現在テキスト抽出メインです。画像化してのアップロードを推奨します。")
+                else:
+                    img = Image.open(uploaded_file)
+                    content.append(img)
+            
+            response = model.generate_content(content)
+            # JSON部分を抽出（Geminiの応答からJSONをパース）
+            res_text = response.text.replace('```json', '').replace('```', '').strip()
+            st.session_state.res_json = json.loads(res_text)
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"解析エラー: {e}")
 
-# --- 6. 解析ロジック ---
-if analyze_btn:
-    if not user_input:
-        st.warning("メモを入力してください。")
-    else:
-        with st.spinner("解析中..."):
-            try:
-                response = groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[
-                        {
-                            "role": "system", 
-                            "content": "You are a medical expert. Response must be in JSON format."
-                        },
-                        {
-                            "role": "user", 
-                            "content": f"""
-                            以下のメモから情報を抽出し、日本語のJSONで返してください。
-                            
-                            【出力ルール】
-                            - topic: 疾患名やテーマ。
-                            - cbt_knowledge: 関連するCBT知識を「・」を用いた箇条書きのテキストとして作成してください。項目ごとに必ず「改行(\\n)」を入れて、読みやすい箇条書きのテキストにしてください。辞書形式やオブジェクト形式にはせず、必ず一つの「文字列」にしてください。
-                            - report_draft: 実習レポートの考察案。
-                            
-                            ボリュームは「{output_length}」で。
-                            
-                            メモ: {user_input}
-                            """
-                        }
-                    ],
-                    response_format={"type": "json_object"}
-                )
-                res = json.loads(response.choices[0].message.content)
-                
-                # 万が一AIがリストや辞書で返してきた場合のバックアップ処理
-                if not isinstance(res.get('cbt_knowledge'), str):
-                    res['cbt_knowledge'] = str(res['cbt_knowledge'])
-                
-                st.session_state.res_json = res
-                st.session_state.saved = False
-                st.rerun() 
-            except Exception as e:
-                st.error(f"解析エラー: {e}")
-
-# --- 7. 結果表示 & 保存エリア ---
+# --- 6. 結果表示 & 保存 ---
 if st.session_state.res_json:
     data = st.session_state.res_json
     st.divider()
-    st.markdown(f"### 📌 テーマ: **{data['topic']}**")
+    st.markdown(f"### 📌 {data['topic']}")
     
-    tab1, tab2 = st.tabs(["📚 CBT知識", "📝 レポート案"])
-    with tab1:
-        st.info(data['cbt_knowledge'])
-    with tab2:
-        st.success(data['report_draft'])
+    col_a, col_b = st.tabs(["💡 重要ポイント", "📝 詳細解説"])
+    with col_a:
+        st.info(data['key_points'])
+    with col_b:
+        st.success(data['analysis'])
 
-    if department is None:
-        st.warning("保存するにはサイドバーで診療科を選択してください。")
-        st.button("📥 保存不可 (診療科未選択)", use_container_width=True, disabled=True)
-    else:
-        if st.button(f"📥 {department} として保存", use_container_width=True):
-            with st.spinner("Notionに同期中..."):
-                try:
-                    notion.pages.create(
-                        parent={"database_id": DATABASE_ID},
-                        properties={
-                            "Name": {"title": [{"text": {"content": str(data['topic'])}}]},
-                            "CBT知識": {"rich_text": [{"text": {"content": str(data['cbt_knowledge'])}}]},
-                            "レポート考察": {"rich_text": [{"text": {"content": str(data['report_draft'])}}]},
-                            "診療科": {"select": {"name": department}},
-                            # 【追加】入力した生のメモをそのまま保存する
-                            "実習メモ": {"rich_text": [{"text": {"content": user_input}}]},
-                            "作成日時": {"date": {"start": today}}
-                        }
-                    )
-                    st.session_state.saved = True
-                    st.toast(f"✅ メモと解析結果を {department} に保存しました！")
-                except Exception as e:
-                    st.error(f"Notion保存エラー: {e}")
+    if st.button("📥 Notionに保存", use_container_width=True):
+        try:
+            notion.pages.create(
+                parent={"database_id": DATABASE_ID},
+                properties={
+                    "Name": {"title": [{"text": {"content": data['topic']}}]},
+                    "CBT知識": {"rich_text": [{"text": {"content": data['key_points']}}]},
+                    "レポート考察": {"rich_text": [{"text": {"content": data['analysis']}}]},
+                    "実習メモ": {"rich_text": [{"text": {"content": f"【{mode}】\n{user_query}"}}]}
+                }
+            )
+            st.toast("Notionに保存完了！")
+        except Exception as e:
+            st.error(f"Notion保存エラー: {e}")
