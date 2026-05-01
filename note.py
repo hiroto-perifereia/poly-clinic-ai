@@ -4,11 +4,7 @@ from notion_client import Client
 import json
 
 # --- 1. ページ基本設定 ---
-st.set_page_config(
-    page_title="Medical AI Assistant",
-    page_icon="🩺",
-    layout="centered"
-)
+st.set_page_config(page_title="Medical AI Assistant", page_icon="🩺", layout="centered")
 
 # --- 2. クライアント初期化 ---
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -29,20 +25,18 @@ if "saved" not in st.session_state:
 # --- 4. サイドバー (科目選択) ---
 with st.sidebar:
     st.title("🏥 設定")
-    # 診療科を選べるようにします
+    
+    # 選択肢のリスト（先頭にプレースホルダーを追加）
+    dept_options = ["--- 診療科を選択 ---", "内科", "循環器内科", "消化器内科", "外科", "消化器外科", "心臓血管外科", "小児科", "産婦人科", "精神科", "その他"]
+    
     department = st.selectbox(
-        "実習中の診療科を選択",
-        options=["内科", "循環器内科", "消化器内科", "外科", "消化器外科", "心臓血管外科", "小児科", "産婦人科", "精神科", "その他"],
-        index=0
+        "実習中の診療科",
+        options=dept_options,
+        index=0 # 最初は "--- 診療科を選択 ---" が選ばれる
     )
+    
     st.divider()
-    output_length = st.radio(
-        "出力のボリューム",
-        options=["簡潔に", "標準的", "詳しく"],
-        index=1,
-        horizontal=True
-    )
-    st.caption(f"現在の科: **{department}**")
+    output_length = st.radio("ボリューム", options=["簡潔に", "標準的", "詳しく"], index=1, horizontal=True)
     st.caption("Developed by Hiroto Fujii")
 
 # --- 5. メイン画面 ---
@@ -51,12 +45,11 @@ st.caption("実習の記録を、CBTの知識とレポートへ。")
 
 user_input = st.text_area(
     "実習中の気づきやメモを入力...", 
-    placeholder="（例）70代男性、主訴は... 身体所見では...",
+    placeholder="（例）70代男性、主訴は...",
     height=180,
     key=f"input_area_{st.session_state.text_key}"
 )
 
-# ボタン配置
 col1, col2 = st.columns(2)
 with col1:
     analyze_btn = st.button("✨ 解析を実行", use_container_width=True, type="primary")
@@ -77,14 +70,8 @@ if analyze_btn:
                 response = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=[
-                        {
-                            "role": "system", 
-                            "content": "You are a medical expert. Response must be in JSON format."
-                        },
-                        {
-                            "role": "user", 
-                            "content": f"以下のメモから topic, cbt_knowledge, report_draft を日本語のJSONで作成してください。ボリュームは「{output_length}」で。\n\nメモ: {user_input}"
-                        }
+                        {"role": "system", "content": "You are a medical expert. Response must be in JSON format."},
+                        {"role": "user", "content": f"以下のメモから topic, cbt_knowledge, report_draft を日本語のJSONで作成してください。ボリュームは「{output_length}」で。\n\nメモ: {user_input}"}
                     ],
                     response_format={"type": "json_object"}
                 )
@@ -106,8 +93,13 @@ if st.session_state.res_json:
     with tab2:
         st.success(data['report_draft'])
 
-    # 保存ボタンに選択した診療科を表示
-    if st.button(f"📥 {department} として保存する", use_container_width=True):
+    # 【重要】診療科が選択されていない場合の判定
+    is_not_selected = (department == "--- 診療科を選択 ---")
+    
+    # 保存ボタンのラベルと無効化設定
+    save_label = f"📥 {department} として保存" if not is_not_selected else "⚠️ 診療科を選択してください"
+    
+    if st.button(save_label, use_container_width=True, disabled=is_not_selected):
         with st.spinner("Notionに同期中..."):
             try:
                 notion.pages.create(
@@ -116,11 +108,10 @@ if st.session_state.res_json:
                         "Name": {"title": [{"text": {"content": str(data['topic'])}}]},
                         "CBT知識": {"rich_text": [{"text": {"content": str(data['cbt_knowledge'])}}]},
                         "レポート考察": {"rich_text": [{"text": {"content": str(data['report_draft'])}}]},
-                        # 【重要】ここに選択した診療科を送る
                         "診療科": {"rich_text": [{"text": {"content": department}}]}
                     }
                 )
                 st.session_state.saved = True
-                st.toast(f"✅ {department} のデータとして保存完了！")
+                st.toast(f"✅ {department} に保存完了！")
             except Exception as e:
                 st.error(f"Notion保存エラー: {e}")
