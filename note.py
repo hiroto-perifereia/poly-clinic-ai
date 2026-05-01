@@ -58,7 +58,6 @@ with col2:
         st.rerun()
 
 # --- 6. 解析ロジック ---
-# --- 6. 解析ロジック ---
 if analyze_btn:
     if not user_input:
         st.warning("メモを入力してください。")
@@ -68,22 +67,33 @@ if analyze_btn:
                 response = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=[
-                        {"role": "system", "content": "You are a medical expert. Response must be in JSON format."},
-                        {"role": "user", "content": f"以下のメモから topic, cbt_knowledge, report_draft を日本語のJSONで作成してください。cbt_knowledgeは、辞書形式ではなく一つの文章（テキスト）として出力してください。\n\nメモ: {user_input}"}
+                        {
+                            "role": "system", 
+                            "content": "You are a medical expert. Response must be in JSON format."
+                        },
+                        {
+                            "role": "user", 
+                            "content": f"""
+                            以下のメモから情報を抽出し、日本語のJSONで返してください。
+                            
+                            【出力ルール】
+                            - topic: 疾患名やテーマ。
+                            - cbt_knowledge: 関連するCBT知識を「・」を用いた箇条書きのテキストとして作成してください。辞書形式やオブジェクト形式にはせず、必ず一つの「文字列」にしてください。
+                            - report_draft: 実習レポートの考察案。
+                            
+                            ボリュームは「{output_length}」で。
+                            
+                            メモ: {user_input}
+                            """
+                        }
                     ],
                     response_format={"type": "json_object"}
                 )
                 res = json.loads(response.choices[0].message.content)
                 
-                # 【ここが重要：修正ポイント】
-                # もしcbt_knowledgeが辞書形式（{'病態':...}）で返ってきてしまったら、文字列に直す
-                if isinstance(res.get('cbt_knowledge'), dict):
-                    knowledge_dict = res['cbt_knowledge']
-                    # 辞書の中身を「病態: 内容... \n診断: 内容...」という1つのテキストに変換
-                    flattened_text = ""
-                    for key, value in knowledge_dict.items():
-                        flattened_text += f"■{key}: {value}\n"
-                    res['cbt_knowledge'] = flattened_text.strip()
+                # 万が一AIがリストや辞書で返してきた場合のバックアップ処理
+                if not isinstance(res.get('cbt_knowledge'), str):
+                    res['cbt_knowledge'] = str(res['cbt_knowledge'])
                 
                 st.session_state.res_json = res
                 st.session_state.saved = False
