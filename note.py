@@ -12,7 +12,8 @@ st.set_page_config(page_title="CBT & Med-Log AI", page_icon="🎓", layout="cent
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel('gemini-1.5-flash') # 高速・高機能なFlashを採用
 notion = Client(auth=st.secrets["NOTION_TOKEN"])
-DATABASE_ID = st.secrets["DATABASE_ID"]
+DB_CBT = st.secrets.get("DATABASE_ID_CBT") # CBT用DB
+DB_LOG = st.secrets.get("DATABASE_ID_LOG") # 実習ログ用DB
 
 # --- 3. セッション状態の初期化 ---
 if "res_json" not in st.session_state:
@@ -20,10 +21,15 @@ if "res_json" not in st.session_state:
 
 # --- 4. サイドバー設定 ---
 with st.sidebar:
-    st.title("⚙️ モード設定")
     mode = st.radio("機能を選択", ["過去問チェッカー", "講義資料・テキスト構造化", "実習メモ"])
-    st.divider()
-    st.caption("Developed by Hiroto Fujii")
+    
+    # モードによって保存先IDを決定
+    if mode == "過去問チェッカー":
+        target_db = DB_CBT
+        st.info("保存先: CBT弱点データベース")
+    else:
+        target_db = DB_LOG
+        st.info("保存先: 実習ログデータベース")
 
 # --- 5. メイン画面 ---
 st.title(f"🎓 {mode}")
@@ -31,11 +37,11 @@ st.title(f"🎓 {mode}")
 # ファイルアップロード（画像・PDF）
 uploaded_file = st.file_uploader("資料や問題のスクショをアップロード", type=["png", "jpg", "jpeg", "pdf"])
 
-# 補足テキスト入力
+# 画像がなくてもいいように、テキストエリアを広めに
 user_query = st.text_area(
-    "補足・知りたいこと", 
-    placeholder="（例）なぜcが間違いなのか教えて / このスライドの重要ポイントをまとめて",
-    height=100
+    "問題文やメモを入力（画像なしでもOK）", 
+    placeholder="問題文を貼り付けるか、疑問点を入力してください...",
+    height=200
 )
 
 # 解析ボタン
@@ -93,7 +99,7 @@ if st.session_state.res_json:
     if st.button("📥 Notionに保存", use_container_width=True):
         try:
             notion.pages.create(
-                parent={"database_id": DATABASE_ID},
+                parent={"database_id": target_db}, # ここで切り替え
                 properties={
                     "Name": {"title": [{"text": {"content": data['topic']}}]},
                     "CBT知識": {"rich_text": [{"text": {"content": data['key_points']}}]},
