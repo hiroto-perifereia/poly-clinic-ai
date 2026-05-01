@@ -129,6 +129,7 @@ if st.session_state.res_json:
                             "診療科": {"select": {"name": department}},
                             # 【追加】入力した生のメモをそのまま保存する
                             "実習メモ": {"rich_text": [{"text": {"content": user_input}}]}
+                            "作成日時": {"date": {"start": today}}
                         }
                     )
                     st.session_state.saved = True
