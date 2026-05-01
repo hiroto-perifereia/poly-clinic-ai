@@ -1,3 +1,4 @@
 streamlit
 groq
 notion-client
+google-generativeai
