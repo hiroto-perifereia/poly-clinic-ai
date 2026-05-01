@@ -25,24 +25,20 @@ if "saved" not in st.session_state:
 # --- 4. サイドバー (科目選択) ---
 with st.sidebar:
     st.title("🏥 設定")
-    
-    # 選択肢のリスト（ここには純粋な科目名だけを入れる）
-    dept_options = ["循環器内科", "消化器内科", "外科", "消化器外科", "心臓血管外科", "小児科", "産婦人科", "精神科", "その他"]
-    
+    dept_options = ["内科", "循環器内科", "消化器内科", "外科", "消化器外科", "心臓血管外科", "小児科", "産婦人科", "精神科", "その他"]
     department = st.selectbox(
         "実習中の診療科",
         options=dept_options,
-        index=None,            # 初期状態を「未選択」にする
-        placeholder="診療科を選択..."  # 未選択時に表示する薄い文字
+        index=None,
+        placeholder="診療科を選択..."
     )
-    
     st.divider()
     output_length = st.radio("ボリューム", options=["簡潔に", "標準的", "詳しく"], index=1, horizontal=True)
     st.caption("Developed by Hiroto Fujii")
 
-# --- 5. メイン画面 ---
+# --- 5. メメイン画面 ---
 st.title("🩺 Poly-Clinic Support AI")
-st.caption("実習の記録を、CBTの知識とレポートへ。")
+st.caption("実習の記憶を、CBTの知識とレポートへ。")
 
 user_input = st.text_area(
     "実習中の気づきやメモを入力...", 
@@ -94,7 +90,6 @@ if st.session_state.res_json:
     with tab2:
         st.success(data['report_draft'])
 
-    # 保存ボタンの判定
     if department is None:
         st.warning("保存するにはサイドバーで診療科を選択してください。")
         st.button("📥 保存不可 (診療科未選択)", use_container_width=True, disabled=True)
@@ -108,10 +103,12 @@ if st.session_state.res_json:
                             "Name": {"title": [{"text": {"content": str(data['topic'])}}]},
                             "CBT知識": {"rich_text": [{"text": {"content": str(data['cbt_knowledge'])}}]},
                             "レポート考察": {"rich_text": [{"text": {"content": str(data['report_draft'])}}]},
-                            "診療科": {"rich_text": [{"text": {"content": department}}]}
+                            "診療科": {"rich_text": [{"text": {"content": department}}]},
+                            # 【追加】入力した生のメモをそのまま保存する
+                            "実習メモ": {"rich_text": [{"text": {"content": user_input}}]}
                         }
                     )
                     st.session_state.saved = True
-                    st.toast(f"✅ {department} に保存完了！")
+                    st.toast(f"✅ メモと解析結果を {department} に保存しました！")
                 except Exception as e:
                     st.error(f"Notion保存エラー: {e}")
