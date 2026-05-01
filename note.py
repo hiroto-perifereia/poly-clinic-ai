@@ -25,7 +25,7 @@ if "saved" not in st.session_state:
 # --- 4. サイドバー (科目選択) ---
 with st.sidebar:
     st.title("🏥 設定")
-    dept_options = ["内科", "循環器内科", "消化器内科", "外科", "消化器外科", "心臓血管外科", "小児科", "産婦人科", "精神科", "その他"]
+    dept_options = ["内科", "循環器内科", "消化器内科", "呼吸器内科", "外科", "消化器外科", "心臓血管外科", "小児科", "産婦人科", "精神科", "その他"]
     department = st.selectbox(
         "実習中の診療科",
         options=dept_options,
