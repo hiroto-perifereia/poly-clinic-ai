@@ -128,7 +128,7 @@ if st.session_state.res_json:
                             "レポート考察": {"rich_text": [{"text": {"content": str(data['report_draft'])}}]},
                             "診療科": {"select": {"name": department}},
                             # 【追加】入力した生のメモをそのまま保存する
-                            "実習メモ": {"rich_text": [{"text": {"content": user_input}}]}
+                            "実習メモ": {"rich_text": [{"text": {"content": user_input}}]},
                             "作成日時": {"date": {"start": today}}
                         }
                     )
