@@ -64,11 +64,29 @@ if analyze_btn:
     else:
         with st.spinner("解析中..."):
             try:
+                # --- 6. 解析ロジック (プロンプトを修正) ---
                 response = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=[
-                        {"role": "system", "content": "You are a medical expert. Response must be in JSON format."},
-                        {"role": "user", "content": f"以下のメモから topic, cbt_knowledge, report_draft を日本語のJSONで作成してください。ボリュームは「{output_length}」で。\n\nメモ: {user_input}"}
+                        {
+                            "role": "system", 
+                            "content": "You are a medical expert. Response must be in JSON format."
+                        },
+                        {
+                            "role": "user", 
+                            "content": f"""
+                            以下のメモから情報を抽出し、日本語のJSONで返してください。
+                            
+                            【指示】
+                            - topic: 症例のテーマ（疾患名など）
+                            - cbt_knowledge: この症例に関連するCBTや国試の重要知識を、「箇条書き」のプレーンなテキストで記述してください。JSONのオブジェクト（{{}}）は含めないでください。
+                            - report_draft: 実習レポートの考察案（文章）。
+                            
+                            ボリュームは「{output_length}」にしてください。
+                            
+                            メモ: {user_input}
+                            """
+                        }
                     ],
                     response_format={"type": "json_object"}
                 )
