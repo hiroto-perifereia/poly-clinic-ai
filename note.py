@@ -11,7 +11,7 @@ st.set_page_config(page_title="CBT & Med-Log AI", page_icon="🎓", layout="cent
 # --- 2. クライアント初期化 ---
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('models/gemini-1.5-flash')
     notion = Client(auth=st.secrets["NOTION_TOKEN"])
     DB_CBT = st.secrets["DATABASE_ID_CBT"]
     DB_LOG = st.secrets["DATABASE_ID_LOG"]
