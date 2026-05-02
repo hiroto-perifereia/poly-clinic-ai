@@ -3,17 +3,21 @@ import google.generativeai as genai
 from notion_client import Client
 import json
 from PIL import Image
+import datetime
 
 # --- 1. ページ基本設定 ---
 st.set_page_config(page_title="CBT & Med-Log AI", page_icon="🎓", layout="centered")
 
 # --- 2. クライアント初期化 ---
-# Secretsに GEMINI_API_KEY を追加してください
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash') # 高速・高機能なFlashを採用
-notion = Client(auth=st.secrets["NOTION_TOKEN"])
-DB_CBT = st.secrets.get("DATABASE_ID_CBT") # CBT用DB
-DB_LOG = st.secrets.get("DATABASE_ID_LOG") # 実習ログ用DB
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    notion = Client(auth=st.secrets["NOTION_TOKEN"])
+    DB_CBT = st.secrets["DATABASE_ID_CBT"]
+    DB_LOG = st.secrets["DATABASE_ID_LOG"]
+except KeyError as e:
+    st.error(f"Secretsが設定されていません: {e}")
+    st.stop()
 
 # --- 3. セッション状態の初期化 ---
 if "res_json" not in st.session_state:
@@ -21,92 +25,87 @@ if "res_json" not in st.session_state:
 
 # --- 4. サイドバー設定 ---
 with st.sidebar:
+    st.title("⚙️ 設定")
     mode = st.radio("機能を選択", ["過去問チェッカー", "講義資料・テキスト構造化", "実習メモ"])
     
-    # モードによって保存先IDを決定
     if mode == "過去問チェッカー":
         target_db = DB_CBT
         st.info("保存先: CBT弱点データベース")
     else:
         target_db = DB_LOG
         st.info("保存先: 実習ログデータベース")
+    
+    st.divider()
+    st.caption("Developed by Hiroto Fujii")
 
 # --- 5. メイン画面 ---
 st.title(f"🎓 {mode}")
 
-# ファイルアップロード（画像・PDF）
-uploaded_file = st.file_uploader("資料や問題のスクショをアップロード", type=["png", "jpg", "jpeg", "pdf"])
+# 入力セクション
+uploaded_file = st.file_uploader("資料や問題のスクショをアップロード（任意）", type=["png", "jpg", "jpeg"])
+user_query = st.text_area("問題文の貼り付け、または補足質問", placeholder="ここに入力...", height=150)
 
-# 画像がなくてもいいように、テキストエリアを広めに
-user_query = st.text_area(
-    "問題文やメモを入力（画像なしでもOK）", 
-    placeholder="問題文を貼り付けるか、疑問点を入力してください...",
-    height=200
-)
-
-# 解析ボタン
 if st.button("✨ AI解析を実行", use_container_width=True, type="primary"):
-    with st.spinner("Geminiが資料を読み解き中..."):
-        try:
-            # プロンプトの組み立て
-            prompt = f"""
-            あなたは医学教育のエキスパートです。
-            現在のモード: {mode}
-            
-            指示:
-            1. アップロードされた資料（画像/PDF）とユーザーの質問を解析してください。
-            2. 以下のJSON形式で回答を生成してください。
-            {{
-                "topic": "テーマ（疾患名・項目名）",
-                "key_points": "CBT/国試に直結する重要知識（改行を含めた箇条書き）",
-                "analysis": "詳細な解説や考察（論理的な説明）"
-            }}
-            
-            補足質問: {user_query}
-            """
-            
-            # 画像がある場合とない場合で処理を分け
-            content = [prompt]
-            if uploaded_file:
-                if uploaded_file.type == "application/pdf":
-                    # PDF処理（簡易版：最初のページなどを扱う場合は追加実装が必要）
-                    st.warning("PDF解析は現在テキスト抽出メインです。画像化してのアップロードを推奨します。")
-                else:
+    if not uploaded_file and not user_query:
+        st.warning("画像かテキストのどちらかを入力してください。")
+    else:
+        with st.spinner("Geminiが解析中..."):
+            try:
+                # プロンプトの組み立て
+                prompt = f"""
+                あなたは医学教育エキスパートです。現在のモードは「{mode}」です。
+                入力された内容（画像およびテキスト）を解析し、以下のJSON形式で回答してください。
+                
+                {{
+                    "topic": "疾患名またはテーマ",
+                    "key_points": "CBT/国試に直結する重要知識（・を使った箇条書き、改行あり）",
+                    "analysis": "詳細な解説・誤答選択肢の検討・考察"
+                }}
+                
+                補足質問: {user_query}
+                """
+                
+                inputs = [prompt]
+                if uploaded_file:
                     img = Image.open(uploaded_file)
-                    content.append(img)
-            
-            response = model.generate_content(content)
-            # JSON部分を抽出（Geminiの応答からJSONをパース）
-            res_text = response.text.replace('```json', '').replace('```', '').strip()
-            st.session_state.res_json = json.loads(res_text)
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"解析エラー: {e}")
+                    inputs.append(img)
+                
+                response = model.generate_content(inputs)
+                # JSON抽出処理
+                res_text = response.text.replace('```json', '').replace('
+```', '').strip()
+                st.session_state.res_json = json.loads(res_text)
+                st.rerun()
+            except Exception as e:
+                st.error(f"解析エラー: {e}")
 
 # --- 6. 結果表示 & 保存 ---
 if st.session_state.res_json:
     data = st.session_state.res_json
     st.divider()
-    st.markdown(f"### 📌 {data['topic']}")
+    st.subheader(f"📌 {data['topic']}")
     
-    col_a, col_b = st.tabs(["💡 重要ポイント", "📝 詳細解説"])
-    with col_a:
+    tab1, tab2 = st.tabs(["💡 重要知識", "📝 詳細解説"])
+    with tab1:
         st.info(data['key_points'])
-    with col_b:
+    with tab2:
         st.success(data['analysis'])
 
     if st.button("📥 Notionに保存", use_container_width=True):
-        try:
-            notion.pages.create(
-                parent={"database_id": target_db}, # ここで切り替え
-                properties={
-                    "Name": {"title": [{"text": {"content": data['topic']}}]},
-                    "CBT知識": {"rich_text": [{"text": {"content": data['key_points']}}]},
-                    "レポート考察": {"rich_text": [{"text": {"content": data['analysis']}}]},
-                    "実習メモ": {"rich_text": [{"text": {"content": f"【{mode}】\n{user_query}"}}]}
-                }
-            )
-            st.toast("Notionに保存完了！")
-        except Exception as e:
-            st.error(f"Notion保存エラー: {e}")
+        with st.spinner("保存中..."):
+            try:
+                today = datetime.date.today().isoformat()
+                notion.pages.create(
+                    parent={"database_id": target_db},
+                    properties={
+                        "Name": {"title": [{"text": {"content": data['topic']}}]},
+                        "CBT知識": {"rich_text": [{"text": {"content": data['key_points']}}]},
+                        "レポート考察": {"rich_text": [{"text": {"content": data['analysis']}}]},
+                        "実習メモ": {"rich_text": [{"text": {"content": f"【{mode}入力】\n{user_query}"}}]},
+                        "日付": {"date": {"start": today}}
+                    }
+                )
+                st.success("Notionへ保存しました！")
+                st.session_state.res_json = None # 保存後にクリア
+            except Exception as e:
+                st.error(f"Notion保存エラー: {e}\n※Notion側のプロパティ名（Name, CBT知識, レポート考察, 実習メモ, 日付）が一致しているか確認してください。")
