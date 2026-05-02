@@ -20,7 +20,6 @@ except Exception as e:
     st.stop()
 
 def get_best_model():
-    """利用可能な最新モデルを自動取得"""
     try:
         models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         priority = ['models/gemini-1.5-flash-latest', 'models/gemini-1.5-flash', 'models/gemini-pro']
@@ -36,84 +35,86 @@ model = genai.GenerativeModel(selected_model)
 # --- 3. セッション状態の初期化 ---
 if "res_json" not in st.session_state:
     st.session_state.res_json = None
+if "saved" not in st.session_state:
+    st.session_state.saved = False
 
 # --- 4. サイドバー設定 ---
 with st.sidebar:
     st.title("⚙️ モード設定")
     mode = st.radio("機能を選択", ["過去問チェッカー", "講義資料・テキスト構造化", "実習メモ"])
-    
-    # モードによって保存先IDを決定
-    if mode == "過去問チェッカー":
-        target_db = DB_CBT
-        st.info("保存先: CBT用DB")
-    else:
-        target_db = DB_LOG
-        st.info("保存先: 実習ログDB")
-    
+    target_db = DB_CBT if mode == "過去問チェッカー" else DB_LOG
+    st.info(f"保存先: {'CBT用DB' if mode == '過去問チェッカー' else '実習ログDB'}")
     st.caption(f"Active Model: {selected_model}")
-    if st.button("結果をクリア"):
-        st.session_state.res_json = None
-        st.rerun()
 
 # --- 5. メイン画面（入力エリア） ---
 st.title(f"🎓 {mode}")
 
 uploaded_file = st.file_uploader("問題や資料のスクショをアップロード", type=["png", "jpg", "jpeg"])
-user_query = st.text_area("問題文の貼り付け、またはAIへの質問", placeholder="例：なぜbは誤り？ / このスライドを要約して", height=150)
+user_query = st.text_area("問題文や補足質問を入力", placeholder="ここに入力...", height=150)
 
-if st.button("✨ AI解析を実行", use_container_width=True, type="primary"):
+# 【修正ポイント】解析ボタンと削除ボタンを横並びに配置
+col_run, col_del_top = st.columns([3, 1]) # 解析ボタンを大きめ(3)、削除を小さめ(1)に
+
+with col_run:
+    run_btn = st.button("✨ AI解析を実行", use_container_width=True, type="primary")
+
+with col_del_top:
+    # 解析前後のリセット用削除ボタン
+    if st.button("🗑️ 削除", use_container_width=True, key="top_delete"):
+        if st.session_state.res_json and not st.session_state.saved:
+            st.session_state.confirm_delete = True
+        else:
+            st.session_state.res_json = None
+            st.session_state.saved = False
+            st.rerun()
+
+# 未保存時の確認メッセージ
+if st.session_state.get("confirm_delete"):
+    st.warning("⚠️ Notionに保存されていませんが、削除してもいいですか？")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("はい、削除します", use_container_width=True):
+            st.session_state.res_json = None
+            st.session_state.confirm_delete = False
+            st.session_state.saved = False
+            st.rerun()
+    with c2:
+        if st.button("いいえ、戻ります", use_container_width=True):
+            st.session_state.confirm_delete = False
+            st.rerun()
+
+# 解析処理
+if run_btn:
     if not uploaded_file and not user_query:
         st.warning("画像かテキストを入力してください。")
     else:
         with st.spinner("Geminiが解析中..."):
             try:
-                prompt = f"""
-                あなたは医学教育のエキスパートです。モード: {mode}
-                入力内容を解析し、必ず以下のJSON形式のみで回答してください。
-                他の解説文などは一切含めないでください。
-                
-                {{
-                    "topic": "テーマ（疾患名など）",
-                    "key_points": "CBT知識（・で箇条書き、改行あり）",
-                    "analysis": "詳細な解説・考察"
-                }}
-                
-                補足質問: {user_query}
-                """
-                
+                prompt = f"あなたは医学教育エキスパートです。モード: {mode}。入力内容を解析し、topic, key_points, analysisを含むJSONで回答してください。質問: {user_query}"
                 inputs = [prompt]
                 if uploaded_file:
                     inputs.append(Image.open(uploaded_file))
                 
                 response = model.generate_content(inputs)
-                response_text = response.text
-                
-                # 正規表現でJSON部分だけを抽出
-                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                
+                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
                 if json_match:
-                    res_text = json_match.group()
-                    st.session_state.res_json = json.loads(res_text)
+                    st.session_state.res_json = json.loads(json_match.group())
+                    st.session_state.saved = False
                     st.rerun()
-                else:
-                    st.error("AIの応答からデータが見つかりませんでした。")
-                    st.write("AIの生応答:", response_text)
-                    
             except Exception as e:
                 st.error(f"解析エラー: {e}")
 
-# --- 6. 解析結果の表示 & Notion保存 ---
+# --- 6. 解析結果の表示 & 保存ボタン ---
 if st.session_state.res_json:
     data = st.session_state.res_json
     st.divider()
     st.subheader(f"📌 {data.get('topic', '解析結果')}")
     
     tab1, tab2 = st.tabs(["💡 重要ポイント", "📝 詳細解説"])
-    with tab1:
-        st.info(data.get('key_points', '情報なし'))
-    with tab2:
-        st.success(data.get('analysis', '情報なし'))
+    with tab1: st.info(data.get('key_points', '情報なし'))
+    with tab2: st.success(data.get('analysis', '情報なし'))
 
+    # 保存ボタンは大きく押しやすく配置
     if st.button("📥 Notionに保存", use_container_width=True):
         with st.spinner("保存中..."):
             try:
@@ -125,9 +126,10 @@ if st.session_state.res_json:
                         "CBT知識": {"rich_text": [{"text": {"content": str(data.get('key_points', ''))}}]},
                         "レポート考察": {"rich_text": [{"text": {"content": str(data.get('analysis', ''))}}]},
                         "実習メモ": {"rich_text": [{"text": {"content": f"【{mode}】\n{user_query}"}}]},
-                        "作成日時": {"date": {"start": today}}
+                        "日付": {"date": {"start": today}}
                     }
                 )
-                st.success(f"Notion（{mode}）に保存完了！")
+                st.session_state.saved = True
+                st.toast("Notionに保存完了！")
             except Exception as e:
                 st.error(f"Notion保存エラー: {e}")
