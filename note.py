@@ -126,7 +126,7 @@ if st.session_state.res_json:
                         "CBT知識": {"rich_text": [{"text": {"content": str(data.get('key_points', ''))}}]},
                         "レポート考察": {"rich_text": [{"text": {"content": str(data.get('analysis', ''))}}]},
                         "実習メモ": {"rich_text": [{"text": {"content": f"【{mode}】\n{user_query}"}}]},
-                        "日付": {"date": {"start": today}}
+                        "作成日時": {"date": {"start": today}}
                     }
                 )
                 st.session_state.saved = True
