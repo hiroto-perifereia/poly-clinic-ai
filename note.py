@@ -9,15 +9,39 @@ import datetime
 st.set_page_config(page_title="CBT & Med-Log AI", page_icon="🎓", layout="centered")
 
 # --- 2. クライアント初期化 ---
-try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('models/gemini-1.5-flash')
-    notion = Client(auth=st.secrets["NOTION_TOKEN"])
-    DB_CBT = st.secrets["DATABASE_ID_CBT"]
-    DB_LOG = st.secrets["DATABASE_ID_LOG"]
-except KeyError as e:
-    st.error(f"Secretsが設定されていません: {e}")
-    st.stop()
+# --- 2. クライアント初期化 ---
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+
+def get_best_model():
+    """利用可能なモデルの中から、FlashまたはProの最新版を自動選択する"""
+    try:
+        models = [m.name for m in genai.list_models() 
+                  if 'generateContent' in m.supported_generation_methods]
+        
+        # 優先順位：1. Flashの最新版, 2. Flash, 3. Pro
+        priority_models = [
+            'models/gemini-1.5-flash-latest',
+            'models/gemini-1.5-flash',
+            'models/gemini-1.5-pro-latest',
+            'models/gemini-pro'
+        ]
+        
+        for target in priority_models:
+            if target in models:
+                return target
+        
+        # 見つからなければ取得したリストの最初を返す
+        return models[0] if models else "gemini-1.5-flash"
+    except Exception:
+        # エラー（APIキー無効など）時はデフォルトを返す
+        return "gemini-1.5-flash"
+
+# 動的にモデル名を決定
+selected_model_name = get_best_model()
+model = genai.GenerativeModel(selected_model_name)
+
+# (デバッグ用) どのモデルが選ばれたかサイドバーに表示
+st.sidebar.caption(f"Active Model: {selected_model_name}")
 
 # --- 3. セッション状態の初期化 ---
 if "res_json" not in st.session_state:
