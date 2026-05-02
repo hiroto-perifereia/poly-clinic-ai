@@ -72,8 +72,7 @@ if st.button("✨ AI解析を実行", use_container_width=True, type="primary"):
                 
                 response = model.generate_content(inputs)
                 # JSON抽出処理
-                res_text = response.text.replace('```json', '').replace('
-```', '').strip()
+                res_text = response.text.replace('```json', '').replace('```', '').strip()
                 st.session_state.res_json = json.loads(res_text)
                 st.rerun()
             except Exception as e:
